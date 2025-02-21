@@ -1,0 +1,229 @@
+---
+title: "Jean-Luc Collette Mini Project 1"
+sidebar: false
+format:
+  html: default
+editor_options: 
+  chunk_output_type: console
+---
+
+Data Source Links:
+
+State Level Poverty Levels 
+https://data.ers.usda.gov/reports.aspx?ID=4040
+
+State Level Population
+https://data.ers.usda.gov/reports.aspx?ID=4049
+
+Health Insurance Coverage of the Total Population
+https://www.kff.org/other/state-indicator/total-population/?currentTimeframe=0&sortModel=%7B%22colId%22:%22Location%22,%22sort%22:%22asc%22%7D
+
+
+
+```{r}
+#| message: false
+#| warning: false
+
+library(tidyverse)
+library(maps)
+library(readr)
+
+
+# Loading Data + changing state to lowercase
+poverty_data <- read_csv("Datastat272Miniproject1poverty2.csv")
+poverty_data
+poverty_data <- poverty_data |>
+  mutate(state = str_to_lower(state))
+
+poverty_data
+
+# Loading us state map data
+us_states <- map_data("state")
+us_states
+
+
+# Loading Shape File State Map Data (taking out unneeded regions)
+library(sf) 
+states <- read_sf("https://rstudio.github.io/leaflet/json/us-states.geojson")
+states <- states |>
+  filter(!(name %in% c("Alaska", 
+                       "Hawaii", 
+                       "Puerto Rico", 
+                       "District of Columbia"))) |>
+  mutate(name = str_to_lower(name))
+  
+states
+```
+
+
+Numeric - Graph of Percent of People in Poverty - Static
+```{r}
+#| message: false
+#| warning: false
+
+library(viridis) 
+poverty_data |>
+  # joining to us_states
+  right_join(us_states, by = c("state" = "region")) |>
+  rename(region = state) |>
+  # creating % variable
+  mutate(percent_poverty = (poverty_2023/pop_2023)) |>
+  # graph
+  ggplot(mapping = aes(x = long, y = lat,
+                          group = group)) + 
+  geom_polygon(aes(fill = percent_poverty), color = "black") + 
+  labs(fill = "Percent of People in Poverty",
+       title = "Poverty Map of the U.S.") +
+  coord_map() +  
+  theme_void() +
+  scale_fill_viridis()  # color scale
+```
+
+This is a graph of the Contiguous United States colored by the amount of the state comprising of people who are below the poverty line. The data is per state, ranging from 0.075 to 0.175 and the colors on the map ranging from a dark blue/purple to a bright yellow. We can see that many southern states in the Southeast have high poverty rates, particularly Louisiana and Mississippi. The lower poverty states are more in the north east (Vermont, New Hampshire) or the midwest/west like from Minnesota to Utah. 
+
+
+
+
+
+
+
+Categorical - Above/below 50% of people have Employer Health Insurance - Static
+```{r}
+poverty_data |>
+  # Join states map to data
+  right_join(us_states, by = c("state" = "region")) |>
+  rename(region = state) |>
+  # Fraphing data onto map
+  ggplot(mapping = aes(x = long, y = lat,
+                          group = group)) + 
+  geom_polygon(aes(fill = Above50_Employer), color = "darkgrey", linewidth = 0.2) + 
+  labs(fill = "Yes/No",
+       title = "Do >50% of people have Employer Health Insurance?") +
+  coord_map() + 
+  theme_void() +  
+  # Color Scale similar to ends on Previous graph
+  scale_fill_manual(values = c("yellow", "darkblue"))
+```
+
+This is a map of the Contiguous United States colored in two categories by if over half of people in the state have health insurance that comes from their job or Employer. States Labeled in Blue do have over 50% with employer health insurance and states labeled in yellow have below 50%. We can see a similar trend to the previous static graph that many of the southern states have below 50% of people with employer health insurance while midwest/west areas with low poverty (from Minnesota to Utah, and a few in the Northeast) have over 50% with employer health insurance. Not having your employer pay for Health insurance means that you must get health insurance yourself, potentially having to pay much more than you would if the employer included it in benefits. 
+
+
+
+
+
+Numeric - Graph of % of people in Poverty - Interactive
+
+```{r}
+#| warning: false
+
+# Making percent_poverty permanent and rounding
+poverty_data <- poverty_data |>
+  mutate(percent_poverty = (poverty_2023/pop_2023)*100) |>
+  mutate(percent_poverty = round(percent_poverty, digits = 2))
+
+# Creating category bins and assigning color palette
+bins <- c(5, 7.5, 10.0, 12.5, 15.0, 17.5, Inf)
+pal <- colorBin("YlOrRd", domain = poverty_data$percent_poverty, bins = bins)
+
+# Creating labels on hover
+library(htmltools)
+library(glue)
+
+# Modifying Labels to look good
+poverty_data <- poverty_data |>
+  mutate(state = str_to_title(state)) |>
+  mutate(labels = str_c(state, 
+                        ": ", 
+                        percent_poverty, 
+                        "% of people are in Poverty")) 
+
+# creating a labels variable
+labels <- lapply(poverty_data$labels, HTML)
+
+
+# Interactive Graph
+leaflet(states) |>
+  setView(-96, 37.8, 4) |>
+  addTiles() |>
+  addPolygons(
+    fillColor = ~pal(poverty_data$percent_poverty),
+    weight = 1,
+    opacity = 5,
+    color = "white",
+    dashArray = "1",
+    fillOpacity = 0.7,
+    highlightOptions = highlightOptions(
+      weight = 1,
+      color = "#555",
+      dashArray = "",
+      fillOpacity = 0.7,
+      bringToFront = TRUE),
+    label = labels,
+    labelOptions = labelOptions(
+      style = list("font-weight" = "normal", padding = "2px 2px"),
+      textsize = "10px",
+      direction = "auto")) |>
+  addLegend(pal = pal, values = ~poverty_data$percent_poverty, opacity = 0.7, title = "% of People in Poverty",
+    position = "bottomright")
+```
+
+This is a graph of the Contiguous United States which is filled with color based on the % of people in poverty by state. The states range from under 7.5% of people in poverty to over 17.5% of people in poverty. Light yellow colors indicate a lower % in poverty while darker red colors indicate a higher percent of people in poverty. There is a trend that particularly south and  southeastern states have higher rates of poverty than the rest of the United States with Louisiana and Mississippi being the highest. States in the northeast like New Hampshire and some across the midwest/west from Minnesota to Utah have lower poverty levels. 
+
+
+
+Categorical - Above/below 50% of people have Employer Health Insurance
+
+```{r}
+#| warning: false
+
+Employer_Insurance_data <- read_csv("Datastat272Miniproject1poverty2.csv")
+Employer_Insurance_data
+Employer_Insurance_data <- Employer_Insurance_data |>
+  mutate(state = str_to_lower(state))
+
+# Creating color palette for categoricals
+pal <- colorFactor(c("red", "yellow"),
+  domain = Employer_Insurance_data$Above50_Employer)
+
+# Creating labels on hover
+Employer_Insurance_data <- Employer_Insurance_data |>
+  mutate(state = str_to_title(state)) |>
+  mutate(labels = str_c(state, 
+                        ": ", 
+                        Employer*100,
+                        "% of people have Employer Insurance")) 
+
+# creating a labels variable
+labels <- lapply(Employer_Insurance_data$labels, HTML)
+
+
+# Interactive Graph
+leaflet(states) |>
+  setView(-96, 37.8, 4) |>
+  addTiles() |>
+  addPolygons(
+    fillColor = ~pal(Employer_Insurance_data$Above50_Employer),
+    weight = 2,
+    opacity = 1,
+    color = "white",
+    dashArray = "1",
+    fillOpacity = 0.7,
+    highlightOptions = highlightOptions(
+      weight = 1,
+      color = "#555",
+      dashArray = "",
+      fillOpacity = 0.7,
+      bringToFront = TRUE),
+    label = labels,
+    labelOptions = labelOptions(
+      style = list("font-weight" = "normal", padding = "3px 8px"),
+      textsize = "15px",
+      direction = "auto")) |>
+  addLegend(pal = pal, values = ~Employer_Insurance_data$Above50_Employer, opacity = 0.7, title = "Greater than 50% Employer Insurance",
+    position = "bottomright")
+```
+
+This is a graph of the Contiguous United States filled in based on if the states have greater or less than 50% of people who have Employer Health Insurance. A red color means that states have less than 50% of people with Employer Health Insurance while yellow represents states with greater than 50%. Again, we see that southern states particularly have low rates of Employer health Insurance while states in the midwest/west (Minnesota to Utah) and northeastern (New hampshire, Massachussets) regions have greater than 50% of people with Employer Health Insurance. For many people, having employers cover health insurance means that they will have to spend less out of their own pocket and time figuring out what insurance to get. This leads to people having less money overall and potentially going into poverty based on healthcare costs. 
+
+
+
